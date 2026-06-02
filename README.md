@@ -1,58 +1,96 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Open Weather API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A small Laravel service that returns the current weather for a city using the
+OpenWeatherMap API, with a second endpoint that caches the result.
 
-## About Laravel
+Built on Laravel 13.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Requirements
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+- PHP 8.3+
+- Composer
+- An OpenWeatherMap API key (the free tier works fine)
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+## Running it
 
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+composer install
+cp .env.example .env
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+Open `.env` and drop your key in:
 
-## Contributing
+```
+OPENWEATHER_API_KEY=your_key_here
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Then start the server:
 
-## Code of Conduct
+```bash
+php artisan serve
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+`.env.example` already has an `APP_KEY` set, so you don't need to run
+`key:generate`. Caching uses the file driver by default, so there's nothing
+else to configure.
 
-## Security Vulnerabilities
+## Endpoints
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+Both endpoints return the same JSON. The only thing that changes is `source`.
 
-## License
+`GET /weather/{city}` fetches live data on every call:
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+```json
+{
+  "city": "London",
+  "temperature": 16.33,
+  "description": "light rain",
+  "timestamp": "2026-06-02T10:27:45+00:00",
+  "source": "external"
+}
+```
+
+`GET /weather/{city}/cached` returns the same data but caches it for 10 minutes.
+The first call comes back with `"source": "external"`; any call within the
+10-minute window returns `"source": "cache"`.
+
+Temperature is in Celsius (the request sends `units=metric`). If a city isn't
+found you get a 404, and if OpenWeatherMap is unreachable or returns an error
+you get a 502 or 503. Every error is returned as JSON.
+
+## Tests
+
+```bash
+php artisan test
+```
+
+The tests use Laravel's HTTP fake, so they never hit the real API. They cover
+the happy path, the caching behavior (including a check that the API is only
+called once across two cached requests), a city-not-found case, and an upstream
+failure.
+
+## How it's put together
+
+I tried to keep the layers thin and only add structure where it earns its place.
+
+- The controller just orchestrates. It has no idea about HTTP or OpenWeatherMap.
+- The external API logic sits behind a `WeatherProvider` interface, with
+  `OpenWeatherMapProvider` as the concrete implementation. The controller
+  depends on the interface, which keeps things swappable and makes the provider
+  easy to fake in tests.
+- A `WeatherData` DTO moves the data around internally, and a `WeatherResource`
+  shapes the JSON that goes out. The provider is the only place that ever touches
+  OpenWeatherMap's raw response shape, so if their payload changes there's just
+  one spot to update.
+
+A few decisions worth pointing out:
+
+- For the cached endpoint I used `Cache::get` and `Cache::put` instead of
+  `Cache::remember`. `remember()` hides whether the value was a hit or a miss,
+  and I needed that to decide the `source`. The cache key is normalized
+  (lowercased and trimmed) so "London" and " london " share one entry, and only
+  the weather facts get cached, never the source flag.
+- Upstream failures are turned into typed exceptions at the provider and mapped
+  to sensible status codes. The underlying cause is logged but never sent back to
+  the client. Retries only happen on connection errors and 5xx responses, not on
+  a 404, since there's no point retrying a city that doesn't exist.
