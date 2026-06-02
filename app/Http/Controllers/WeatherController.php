@@ -4,22 +4,24 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Contracts\WeatherProvider;
+use App\Http\Resources\WeatherResource;
 use Illuminate\Http\JsonResponse;
 
 class WeatherController extends Controller
 {
+    public function __construct(
+        private readonly WeatherProvider $weather,
+    ) {}
+
     /**
      * GET /weather/{city}
      *
      * Always fetches fresh weather data from the external provider.
      */
-    public function show(string $city): JsonResponse
+    public function show(string $city): WeatherResource
     {
-        // Weather provider integration is wired in the next step.
-        return response()->json([
-            'city' => $city,
-            'source' => 'external',
-        ]);
+        return new WeatherResource($this->weather->fetch($city), source: 'external');
     }
 
     /**
