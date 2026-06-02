@@ -34,6 +34,10 @@ it('returns current weather from the external provider', function () {
             'source' => 'external',
         ])
         ->assertJsonStructure(['city', 'temperature', 'description', 'timestamp', 'source']);
+
+    // The outgoing request asks for the city in Celsius (units=metric).
+    Http::assertSent(fn ($request) => str_contains($request->url(), 'q=London')
+        && $request['units'] === 'metric');
 });
 
 it('serves the second cached request from cache without calling the API again', function () {

@@ -64,10 +64,13 @@ you get a 502 or 503. Every error is returned as JSON.
 php artisan test
 ```
 
-The tests use Laravel's HTTP fake, so they never hit the real API. They cover
-the happy path, the caching behavior (including a check that the API is only
-called once across two cached requests), a city-not-found case, and an upstream
-failure.
+The feature tests use Laravel's HTTP fake, so they never hit the real API. They
+cover the happy path (and check the outgoing request actually asks for
+`units=metric`), the caching behavior (including that the API is only called
+once across two cached requests), a city-not-found case, and an upstream
+failure. There are also a couple of unit tests around the `WeatherData` DTO,
+covering how it's built from the API payload and how it survives the round-trip
+into and out of the cache.
 
 ## How it's put together
 
