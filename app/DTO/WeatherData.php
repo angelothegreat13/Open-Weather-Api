@@ -34,4 +34,35 @@ final readonly class WeatherData
             observedAt: CarbonImmutable::createFromTimestamp($payload['dt'], 'UTC'),
         );
     }
+
+    /**
+     * Primitive representation for caching — store-agnostic and decoupled from
+     * this class's PHP definition (unlike serializing the object itself).
+     *
+     * @return array{city: string, temperature: float, description: string, observed_at: int}
+     */
+    public function toArray(): array
+    {
+        return [
+            'city' => $this->city,
+            'temperature' => $this->temperature,
+            'description' => $this->description,
+            'observed_at' => $this->observedAt->getTimestamp(),
+        ];
+    }
+
+    /**
+     * Rebuild from the primitive cache representation.
+     *
+     * @param  array{city: string, temperature: float, description: string, observed_at: int}  $data
+     */
+    public static function fromArray(array $data): self
+    {
+        return new self(
+            city: $data['city'],
+            temperature: (float) $data['temperature'],
+            description: $data['description'],
+            observedAt: CarbonImmutable::createFromTimestamp($data['observed_at'], 'UTC'),
+        );
+    }
 }
