@@ -9,17 +9,11 @@ use App\DTO\WeatherData;
 use App\Exceptions\CityNotFoundException;
 use App\Exceptions\WeatherServiceException;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
+use Throwable;
 
-/**
- * OpenWeatherMap implementation of the WeatherProvider contract.
- *
- * All knowledge of how OpenWeatherMap behaves — its query params, status codes
- * and response shape — is isolated here. Upstream failures are translated into
- * domain exceptions at this boundary so the rest of the app never sees raw
- * HTTP details.
- */
 final readonly class OpenWeatherMapProvider implements WeatherProvider
 {
     public function __construct(
@@ -33,14 +27,13 @@ final readonly class OpenWeatherMapProvider implements WeatherProvider
         try {
             $response = Http::baseUrl($this->baseUrl)
                 ->timeout(5)
-                ->retry(2, 200, throw: false) // retry transient failures only
+                ->retry(2, 200, $this->shouldRetry(...), throw: false)
                 ->get('weather', [
                     'q' => $city,
                     'appid' => $this->apiKey,
                     'units' => $this->units,
                 ]);
         } catch (ConnectionException $e) {
-            // Timeout / DNS / connection refused — never produced a response.
             throw WeatherServiceException::unavailable($e);
         }
 
@@ -49,7 +42,6 @@ final readonly class OpenWeatherMapProvider implements WeatherProvider
         }
 
         if ($response->failed()) {
-            // 5xx, 401 (bad key), 429, etc. Keep the cause for the log only.
             throw WeatherServiceException::badResponse(
                 new RuntimeException("OpenWeatherMap responded {$response->status()}: {$response->body()}")
             );
@@ -66,14 +58,16 @@ final readonly class OpenWeatherMapProvider implements WeatherProvider
         return WeatherData::fromOpenWeatherMap($payload);
     }
 
-    /**
-     * Guard against a 200 response whose body is missing fields we rely on.
-     *
-     * @param  mixed  $payload
-     */
-    private function hasExpectedShape($payload): bool
+    private function hasExpectedShape(mixed $payload): bool
     {
         return is_array($payload)
             && isset($payload['name'], $payload['main']['temp'], $payload['weather'][0]['description'], $payload['dt']);
+    }
+
+    /** Retry only transient failures — connection errors and upstream 5xx, never 4xx. */
+    private function shouldRetry(Throwable $e): bool
+    {
+        return $e instanceof ConnectionException
+            || ($e instanceof RequestException && (bool) $e->response?->serverError());
     }
 }

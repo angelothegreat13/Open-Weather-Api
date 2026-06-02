@@ -6,11 +6,6 @@ namespace App\DTO;
 
 use Carbon\CarbonImmutable;
 
-/**
- * Immutable representation of a single weather reading, decoupled from the
- * OpenWeatherMap response shape. Temperature is expressed in the unit the
- * provider was configured with (Celsius when units=metric).
- */
 final readonly class WeatherData
 {
     public function __construct(
@@ -20,11 +15,7 @@ final readonly class WeatherData
         public CarbonImmutable $observedAt,
     ) {}
 
-    /**
-     * Build from a (validated) OpenWeatherMap "current weather" payload.
-     *
-     * @param  array<string, mixed>  $payload
-     */
+    /** @param array<string, mixed> $payload */
     public static function fromOpenWeatherMap(array $payload): self
     {
         return new self(
@@ -35,12 +26,7 @@ final readonly class WeatherData
         );
     }
 
-    /**
-     * Primitive representation for caching — store-agnostic and decoupled from
-     * this class's PHP definition (unlike serializing the object itself).
-     *
-     * @return array{city: string, temperature: float, description: string, observed_at: int}
-     */
+    /** @return array{city: string, temperature: float, description: string, observed_at: int} */
     public function toArray(): array
     {
         return [
@@ -51,11 +37,7 @@ final readonly class WeatherData
         ];
     }
 
-    /**
-     * Rebuild from the primitive cache representation.
-     *
-     * @param  array{city: string, temperature: float, description: string, observed_at: int}  $data
-     */
+    /** @param array{city: string, temperature: float, description: string, observed_at: int} $data */
     public static function fromArray(array $data): self
     {
         return new self(
